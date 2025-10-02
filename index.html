@@ -309,10 +309,15 @@
             localPlayer.x += localPlayer.vx;
             localPlayer.y += localPlayer.vy;
 
-            // Camera follows player
+            // Camera follows player (both X and Y)
             const targetScrollX = localPlayer.x - canvas.width * 0.3;
             worldScrollX += (targetScrollX - worldScrollX) * 0.1;
             worldScrollX = Math.max(0, worldScrollX);
+            
+            // Calculate camera Y offset to keep player in view
+            const cameraTargetY = localPlayer.y - canvas.height * 0.5;
+            if (!window.cameraY) window.cameraY = 0;
+            window.cameraY += (cameraTargetY - window.cameraY) * 0.1;
 
             localPlayer.grounded = false;
             
@@ -381,6 +386,9 @@
         }
 
         function drawCandles() {
+            ctx.save();
+            ctx.translate(0, -window.cameraY || 0);
+            
             candles.forEach(candle => {
                 const screenX = candle.x - worldScrollX;
                 
@@ -399,9 +407,14 @@
                     drawPixelBlock(screenX, bodyTopY, CANDLE_WIDTH, bodyHeight, candle.color);
                 }
             });
+            
+            ctx.restore();
         }
 
         function drawPlayer(player, isLocal = false) {
+            ctx.save();
+            ctx.translate(0, -window.cameraY || 0);
+            
             const screenX = player.x - worldScrollX;
             const x = screenX;
             const y = player.y;
@@ -436,6 +449,8 @@
                 ctx.font = '8px "Press Start 2P"';
                 ctx.fillText('P1', x - 2, y - 8);
             }
+            
+            ctx.restore();
         }
 
         function drawClouds() {
