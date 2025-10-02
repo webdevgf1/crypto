@@ -319,16 +319,19 @@
             localPlayer.grounded = false;
             const playerCenterX = localPlayer.x + localPlayer.width / 2 - candleOffset;
             
+            // Check collision with candles
             candles.forEach(candle => {
                 const candleScreenX = candle.x - candleOffset;
                 
-                if (playerCenterX > candleScreenX - CANDLE_WIDTH/2 && 
-                    playerCenterX < candleScreenX + CANDLE_WIDTH + CANDLE_WIDTH/2) {
+                // Player must be within candle's horizontal bounds
+                if (localPlayer.x + localPlayer.width > candleScreenX && 
+                    localPlayer.x < candleScreenX + CANDLE_WIDTH) {
                     
                     const bodyTopY = BASE_HEIGHT - candle.bodyTop * PRICE_SCALE;
                     
-                    if (localPlayer.y + localPlayer.height >= bodyTopY && 
-                        localPlayer.y + localPlayer.height <= bodyTopY + 20 &&
+                    // Landing on top of candle
+                    if (localPlayer.y + localPlayer.height >= bodyTopY - 5 && 
+                        localPlayer.y + localPlayer.height <= bodyTopY + 10 &&
                         localPlayer.vy >= 0) {
                         localPlayer.y = bodyTopY - localPlayer.height;
                         localPlayer.vy = 0;
@@ -337,24 +340,27 @@
                 }
             });
 
-            if (localPlayer.y + localPlayer.height >= canvas.height - 80) {
-                localPlayer.y = canvas.height - 80 - localPlayer.height;
-                localPlayer.vy = 0;
-                localPlayer.grounded = true;
-            }
-
+            // Jump
             if ((keys[' '] || keys['ArrowUp']) && localPlayer.grounded) {
                 localPlayer.vy = JUMP_FORCE;
                 localPlayer.grounded = false;
             }
 
-            localPlayer.x = Math.max(50, Math.min(canvas.width - localPlayer.width - 50, localPlayer.x));
+            // Keep player in horizontal bounds
+            localPlayer.x = Math.max(10, Math.min(canvas.width - localPlayer.width - 10, localPlayer.x));
 
-            if (localPlayer.x > canvas.width * 0.55) {
-                const scrollSpeed = 2;
-                candleOffset += scrollSpeed;
-                localPlayer.x -= scrollSpeed;
-                score += Math.floor(scrollSpeed * 10);
+            // Auto-scroll the world to the right
+            const scrollSpeed = 2;
+            candleOffset += scrollSpeed;
+            score += Math.floor(scrollSpeed * 10);
+            document.getElementById('score').textContent = score;
+
+            // Game over if player falls off screen
+            if (localPlayer.y > canvas.height) {
+                localPlayer.x = 200;
+                localPlayer.y = 300;
+                localPlayer.vy = 0;
+                score = Math.max(0, score - 500);
                 document.getElementById('score').textContent = score;
             }
 
@@ -450,21 +456,7 @@
         }
 
         function drawFloor() {
-            const floorY = canvas.height - 80;
-            
-            // Floor blocks
-            for (let x = 0; x < canvas.width; x += 32) {
-                for (let y = floorY; y < canvas.height; y += 32) {
-                    const offsetX = (x + candleOffset * 0.5) % 64 < 32 ? 0 : 16;
-                    drawPixelBlock(x, y, 32, 32, y === floorY ? '#8B4513' : '#654321');
-                }
-            }
-            
-            // Grass
-            ctx.fillStyle = '#00ff00';
-            for (let x = 0; x < canvas.width; x += 16) {
-                ctx.fillRect(x, floorY - 4, 8, 4);
-            }
+            // No floor - players can fall off!
         }
 
         function gameLoop() {
