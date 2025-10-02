@@ -208,17 +208,26 @@
         
         const players = new Map();
         let score = 0;
-        let localPlayer = {
-            x: 50,
-            y: 200,
-            vx: 0,
-            vy: 0,
-            width: 16,
-            height: 16,
-            grounded: false,
-            color: '#ff0000',
-            facing: 1
-        };
+        
+        // Initialize player position after first candle is created
+        let localPlayer = null;
+        
+        function initPlayer() {
+            const firstCandle = candles[0];
+            const spawnY = BASE_HEIGHT - firstCandle.bodyTop * PRICE_SCALE - 16;
+            
+            localPlayer = {
+                x: 50,
+                y: spawnY,
+                vx: 0,
+                vy: 0,
+                width: 16,
+                height: 16,
+                grounded: true,
+                color: '#ff0000',
+                facing: 1
+            };
+        }
 
         // Candle data
         class Candle {
@@ -270,6 +279,9 @@
             candles.push(candle);
             lastPrice = candle.close;
         }
+        
+        // Initialize player on first candle
+        initPlayer();
 
         setInterval(() => {
             const candle = generateCandle(lastPrice, candles.length);
@@ -295,6 +307,8 @@
         const FRICTION = 0.85;
 
         function updatePlayer() {
+            if (!localPlayer) return;
+            
             if (keys['ArrowLeft'] || keys['a']) {
                 localPlayer.vx = -MOVE_SPEED;
                 localPlayer.facing = -1;
@@ -323,18 +337,19 @@
             
             // Check collision with candles
             candles.forEach(candle => {
-                const candleScreenX = candle.x - worldScrollX;
-                const playerScreenX = localPlayer.x - worldScrollX;
+                const candleWorldLeft = candle.x;
+                const candleWorldRight = candle.x + CANDLE_WIDTH;
+                const playerWorldLeft = localPlayer.x;
+                const playerWorldRight = localPlayer.x + localPlayer.width;
                 
-                // Player must be within candle's horizontal bounds
-                if (playerScreenX + localPlayer.width > candleScreenX && 
-                    playerScreenX < candleScreenX + CANDLE_WIDTH) {
-                    
+                // Check horizontal overlap
+                if (playerWorldRight > candleWorldLeft && playerWorldLeft < candleWorldRight) {
                     const bodyTopY = BASE_HEIGHT - candle.bodyTop * PRICE_SCALE;
+                    const playerBottom = localPlayer.y + localPlayer.height;
                     
                     // Landing on top of candle
-                    if (localPlayer.y + localPlayer.height >= bodyTopY - 5 && 
-                        localPlayer.y + localPlayer.height <= bodyTopY + 10 &&
+                    if (playerBottom >= bodyTopY - 5 && 
+                        playerBottom <= bodyTopY + 15 &&
                         localPlayer.vy >= 0) {
                         localPlayer.y = bodyTopY - localPlayer.height;
                         localPlayer.vy = 0;
@@ -354,11 +369,10 @@
             document.getElementById('score').textContent = score;
 
             // Game over if player falls off screen
-            if (localPlayer.y > canvas.height) {
-                localPlayer.x = 50;
-                localPlayer.y = 200;
-                localPlayer.vy = 0;
+            if (localPlayer.y > canvas.height + 200) {
+                initPlayer();
                 worldScrollX = 0;
+                window.cameraY = 0;
                 score = 0;
                 document.getElementById('score').textContent = score;
             }
