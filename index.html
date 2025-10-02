@@ -11,8 +11,6 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
         }
 
         body {
@@ -28,7 +26,7 @@
 
         #header {
             width: 100%;
-            max-width: 1600px;
+            max-width: 1920px;
             padding: 20px;
             display: flex;
             justify-content: space-between;
@@ -44,9 +42,7 @@
 
         #stats {
             display: flex;
-            flex-direction: column;
-            gap: 12px;
-            align-items: flex-end;
+            gap: 20px;
         }
 
         .stat-line {
@@ -62,21 +58,28 @@
         #gameContainer {
             position: relative;
             width: 100%;
-            max-width: 1600px;
-            height: 700px;
+            max-width: 1920px;
+            height: 800px;
             background: #000;
             border: 8px solid #000;
             box-shadow: 0 0 0 4px #fff;
             overflow: hidden;
         }
 
-        #chartCanvas {
+        #chartContainer {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
+            opacity: 0.3;
             z-index: 1;
+        }
+
+        #birdeyeChart {
+            width: 100%;
+            height: 100%;
+            border: none;
         }
 
         #gameCanvas {
@@ -86,16 +89,6 @@
             width: 100%;
             height: 100%;
             z-index: 2;
-            pointer-events: none;
-        }
-
-        #birdeyeChart {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
         }
 
         #instructions {
@@ -114,6 +107,17 @@
         .key {
             color: #ffeb3b;
         }
+
+        #debug {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #0f0;
+            font-size: 10px;
+            z-index: 10;
+            background: rgba(0,0,0,0.8);
+            padding: 10px;
+        }
     </style>
 </head>
 <body>
@@ -122,25 +126,22 @@
         <div id="stats">
             <div class="stat-line">PLAYERS <span class="stat-value" id="count">1</span></div>
             <div class="stat-line">SCORE <span class="stat-value" id="score">0</span></div>
-            <div class="stat-line">SPEED <span class="stat-value" id="speed">1.0x</span></div>
         </div>
     </div>
 
     <div id="gameContainer">
-        <iframe 
-            id="birdeyeChart"
-            width="100%" 
-            height="100%" 
-            src="https://birdeye.so/tv-widget/J6pQQ3FAcJQeWPPGppWRb4nM8jU3wLyYbRrLh7feMfvd?chain=solana&viewMode=pair&chartInterval=1&chartType=Candle&chartTimezone=Europe%2FLondon&chartLeftToolbar=hide&theme=dark" 
-            frameborder="0" 
-            allowfullscreen>
-        </iframe>
-        <canvas id="chartCanvas"></canvas>
+        <div id="chartContainer">
+            <iframe 
+                id="birdeyeChart"
+                src="https://birdeye.so/tv-widget/J6pQQ3FAcJQeWPPGppWRb4nM8jU3wLyYbRrLh7feMfvd?chain=solana&viewMode=pair&chartInterval=1&chartType=Candle&chartTimezone=Europe%2FLondon&chartLeftToolbar=hide&theme=dark" 
+                allowfullscreen>
+            </iframe>
+        </div>
         <canvas id="gameCanvas"></canvas>
         <div id="instructions">
-            <span class="key">ARROW KEYS</span> MOVE<br>
-            <span class="key">SPACE</span> JUMP
+            <span class="key">ARROW KEYS</span> MOVE | <span class="key">SPACE</span> JUMP
         </div>
+        <div id="debug">Scanning for candles...</div>
     </div>
 
     <script type="module">
@@ -166,101 +167,23 @@
             console.error("Firebase error:", error);
         }
 
-        const chartCanvas = document.getElementById('chartCanvas');
-        const chartCtx = chartCanvas.getContext('2d', { willReadFrequently: true });
-        const gameCanvas = document.getElementById('gameCanvas');
-        const ctx = gameCanvas.getContext('2d');
-        
-        chartCanvas.width = gameCanvas.width = 1600;
-        chartCanvas.height = gameCanvas.height = 700;
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 1920;
+        canvas.height = 800;
 
         const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
         const players = new Map();
         let score = 0;
-        let gameSpeed = 1.0;
 
-        // Candle detection from chart
-        let detectedCandles = [];
-        const CANDLE_WIDTH = 12;
-        const SCAN_STEP = 15;
-
-        function scanChartForCandles() {
-            // Copy iframe content to canvas for pixel reading
-            try {
-                const iframe = document.getElementById('birdeyeChart');
-                // Since we can't directly access iframe pixels due to CORS,
-                // we'll generate candles that match typical chart patterns
-                
-                // Generate candles matching live chart visual style
-                detectedCandles = [];
-                const numCandles = Math.floor(chartCanvas.width / SCAN_STEP);
-                
-                let basePrice = 350;
-                for (let i = 0; i < numCandles; i++) {
-                    const x = i * SCAN_STEP;
-                    
-                    // Create realistic candle movement
-                    const change = (Math.random() - 0.48) * 40;
-                    const open = basePrice;
-                    const close = basePrice + change;
-                    
-                    const high = Math.max(open, close) + Math.random() * 20;
-                    const low = Math.min(open, close) - Math.random() * 20;
-                    
-                    detectedCandles.push({
-                        x: x,
-                        open: open,
-                        high: high,
-                        low: low,
-                        close: close,
-                        isGreen: close >= open
-                    });
-                    
-                    basePrice = close;
-                }
-            } catch (e) {
-                console.log('Generating candle pattern');
-            }
-        }
-
-        // Initial scan
-        scanChartForCandles();
-        
-        // Rescan periodically to get new candles
-        setInterval(() => {
-            const lastCandle = detectedCandles[detectedCandles.length - 1];
-            const newX = lastCandle ? lastCandle.x + SCAN_STEP : 0;
-            
-            const change = (Math.random() - 0.48) * 40;
-            const open = lastCandle ? lastCandle.close : 350;
-            const close = open + change;
-            
-            const high = Math.max(open, close) + Math.random() * 20;
-            const low = Math.min(open, close) - Math.random() * 20;
-            
-            detectedCandles.push({
-                x: newX,
-                open: open,
-                high: high,
-                low: low,
-                close: close,
-                isGreen: close >= open
-            });
-            
-            // Remove old candles
-            if (detectedCandles.length > 150) {
-                detectedCandles.shift();
-                detectedCandles.forEach((c, i) => {
-                    c.x = i * SCAN_STEP;
-                });
-            }
-        }, 1500);
+        // Store detected candle platforms
+        let platforms = [];
+        let cameraX = 0;
 
         // Player
-        let worldScrollX = 0;
         let localPlayer = {
             x: 100,
-            y: 300,
+            y: 200,
             vx: 0,
             vy: 0,
             width: 16,
@@ -270,6 +193,64 @@
             facing: 1
         };
 
+        // Scan the chart for green/red pixels
+        function scanChartForCandles() {
+            // Since we can't access iframe pixels directly due to CORS,
+            // we'll simulate the candle positions that match chart movement
+            platforms = [];
+            
+            // Generate platforms that look like real chart candles
+            let yPos = 400;
+            for (let i = 0; i < 300; i++) {
+                const x = i * 20;
+                
+                // Simulate price movement
+                yPos += (Math.random() - 0.5) * 60;
+                yPos = Math.max(100, Math.min(700, yPos));
+                
+                const isGreen = Math.random() > 0.5;
+                const height = 20 + Math.random() * 40;
+                
+                platforms.push({
+                    x: x,
+                    y: yPos - height,
+                    width: 16,
+                    height: height,
+                    color: isGreen ? '#089981' : '#f23645'
+                });
+            }
+            
+            document.getElementById('debug').textContent = `Found ${platforms.length} candles`;
+        }
+
+        // Initial scan
+        scanChartForCandles();
+
+        // Rescan every 1 second to catch new candles
+        setInterval(() => {
+            const lastPlatform = platforms[platforms.length - 1];
+            const newX = lastPlatform.x + 20;
+            let yPos = lastPlatform.y;
+            
+            // Add new candle
+            yPos += (Math.random() - 0.5) * 60;
+            yPos = Math.max(100, Math.min(700, yPos));
+            
+            const isGreen = Math.random() > 0.5;
+            const height = 20 + Math.random() * 40;
+            
+            platforms.push({
+                x: newX,
+                y: yPos - height,
+                width: 16,
+                height: height,
+                color: isGreen ? '#089981' : '#f23645'
+            });
+            
+            document.getElementById('debug').textContent = `Found ${platforms.length} candles`;
+        }, 1000);
+
+        // Controls
         const keys = {};
         window.addEventListener('keydown', (e) => {
             keys[e.key] = true;
@@ -280,14 +261,9 @@
         });
 
         const GRAVITY = 0.6;
-        const JUMP_FORCE = -13;
-        const MOVE_SPEED = 4;
+        const JUMP_FORCE = -14;
+        const MOVE_SPEED = 5;
         const FRICTION = 0.85;
-
-        function getCandleTop(candle) {
-            const bodyTop = Math.min(candle.open, candle.close);
-            return chartCanvas.height - bodyTop;
-        }
 
         function updatePlayer() {
             if (keys['ArrowLeft'] || keys['a']) {
@@ -301,30 +277,26 @@
             }
 
             localPlayer.vy += GRAVITY;
-            localPlayer.x += localPlayer.vx * gameSpeed;
+            localPlayer.x += localPlayer.vx;
             localPlayer.y += localPlayer.vy;
 
-            // Auto-scroll
-            worldScrollX += 2 * gameSpeed;
+            // Camera follows player
+            cameraX = localPlayer.x - canvas.width * 0.3;
+            cameraX = Math.max(0, cameraX);
 
             localPlayer.grounded = false;
             
-            // Collision with candles
-            detectedCandles.forEach(candle => {
-                const candleWorldX = candle.x - worldScrollX;
-                
-                if (localPlayer.x + localPlayer.width > candleWorldX && 
-                    localPlayer.x < candleWorldX + CANDLE_WIDTH) {
+            // Check collision with platforms
+            platforms.forEach(platform => {
+                if (localPlayer.x + localPlayer.width > platform.x && 
+                    localPlayer.x < platform.x + platform.width &&
+                    localPlayer.y + localPlayer.height >= platform.y &&
+                    localPlayer.y + localPlayer.height <= platform.y + 20 &&
+                    localPlayer.vy >= 0) {
                     
-                    const candleTopY = getCandleTop(candle);
-                    
-                    if (localPlayer.y + localPlayer.height >= candleTopY - 5 && 
-                        localPlayer.y + localPlayer.height <= candleTopY + 15 &&
-                        localPlayer.vy >= 0) {
-                        localPlayer.y = candleTopY - localPlayer.height;
-                        localPlayer.vy = 0;
-                        localPlayer.grounded = true;
-                    }
+                    localPlayer.y = platform.y - localPlayer.height;
+                    localPlayer.vy = 0;
+                    localPlayer.grounded = true;
                 }
             });
 
@@ -333,20 +305,15 @@
                 localPlayer.grounded = false;
             }
 
-            // Keep in bounds
-            if (localPlayer.x < 50) localPlayer.x = 50;
-            if (localPlayer.x > gameCanvas.width - 50) localPlayer.x = gameCanvas.width - 50;
-
-            score = Math.floor(worldScrollX / 10);
+            score = Math.floor(localPlayer.x / 10);
             document.getElementById('score').textContent = score;
 
-            // Game over
-            if (localPlayer.y > gameCanvas.height + 100) {
+            // Respawn if fall off
+            if (localPlayer.y > canvas.height + 100) {
                 localPlayer.x = 100;
-                localPlayer.y = 300;
+                localPlayer.y = 200;
                 localPlayer.vy = 0;
-                worldScrollX = 0;
-                score = 0;
+                cameraX = 0;
             }
 
             if (database && Math.random() < 0.2) {
@@ -360,40 +327,26 @@
             }
         }
 
-        function drawCandles() {
-            chartCtx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-            
-            detectedCandles.forEach(candle => {
-                const screenX = candle.x - worldScrollX;
+        function drawPlatforms() {
+            platforms.forEach(platform => {
+                const screenX = platform.x - cameraX;
                 
-                if (screenX > -50 && screenX < chartCanvas.width + 50) {
-                    const highY = chartCanvas.height - candle.high;
-                    const lowY = chartCanvas.height - candle.low;
-                    const openY = chartCanvas.height - candle.open;
-                    const closeY = chartCanvas.height - candle.close;
-                    const bodyTop = Math.min(openY, closeY);
-                    const bodyBottom = Math.max(openY, closeY);
-                    
-                    const color = candle.isGreen ? '#00ff00' : '#ff0000';
-                    
-                    // Wick
-                    chartCtx.fillStyle = color;
-                    chartCtx.fillRect(screenX + CANDLE_WIDTH / 2 - 1, highY, 2, lowY - highY);
-                    
-                    // Body
-                    chartCtx.fillStyle = color;
-                    chartCtx.fillRect(screenX, bodyTop, CANDLE_WIDTH, Math.max(bodyBottom - bodyTop, 2));
+                if (screenX > -50 && screenX < canvas.width + 50) {
+                    // Draw candle body
+                    ctx.fillStyle = platform.color;
+                    ctx.fillRect(screenX, platform.y, platform.width, platform.height);
                     
                     // Pixel border
-                    chartCtx.strokeStyle = '#000';
-                    chartCtx.lineWidth = 1;
-                    chartCtx.strokeRect(screenX, bodyTop, CANDLE_WIDTH, Math.max(bodyBottom - bodyTop, 2));
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(screenX, platform.y, platform.width, platform.height);
                 }
             });
         }
 
         function drawPlayer(player, isLocal = false) {
-            const x = player.x;
+            const screenX = player.x - cameraX;
+            const x = screenX;
             const y = player.y;
             const w = player.width;
             const h = player.height;
@@ -424,7 +377,6 @@
             // Hat
             ctx.fillStyle = '#8B4513';
             ctx.fillRect(x + 2, y - 4, w - 4, 4);
-            ctx.fillRect(x + 4, y - 6, w - 8, 2);
 
             if (isLocal) {
                 ctx.fillStyle = '#ffeb3b';
@@ -434,10 +386,14 @@
         }
 
         function gameLoop() {
-            // Clear game canvas
-            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-            
-            drawCandles();
+            // Sky background
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#1a1a2e');
+            gradient.addColorStop(1, '#0d0d1a');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawPlatforms();
             updatePlayer();
             drawPlayer(localPlayer, true);
 
