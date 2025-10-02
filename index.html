@@ -319,10 +319,11 @@
             // Check collision with candles
             candles.forEach(candle => {
                 const candleScreenX = candle.x - worldScrollX;
+                const playerScreenX = localPlayer.x - worldScrollX;
                 
                 // Player must be within candle's horizontal bounds
-                if (localPlayer.x - worldScrollX + localPlayer.width > candleScreenX && 
-                    localPlayer.x - worldScrollX < candleScreenX + CANDLE_WIDTH) {
+                if (playerScreenX + localPlayer.width > candleScreenX && 
+                    playerScreenX < candleScreenX + CANDLE_WIDTH) {
                     
                     const bodyTopY = BASE_HEIGHT - candle.bodyTop * PRICE_SCALE;
                     
@@ -401,7 +402,8 @@
         }
 
         function drawPlayer(player, isLocal = false) {
-            const x = player.x;
+            const screenX = player.x - worldScrollX;
+            const x = screenX;
             const y = player.y;
             const w = player.width;
             const h = player.height;
@@ -438,7 +440,7 @@
 
         function drawClouds() {
             for (let i = 0; i < 8; i++) {
-                const x = (i * 250 + candleOffset * 0.3) % canvas.width;
+                const x = (i * 250 + worldScrollX * 0.3) % (canvas.width + 200) - 100;
                 const y = 50 + (i * 37) % 150;
                 
                 ctx.fillStyle = '#fff';
