@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Chart Platformer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0e27;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            max-width: 1400px;
+            height: 700px;
+            background: linear-gradient(180deg, #1a1f3a 0%, #0f1429 100%);
+            border: 4px solid #00ff88;
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.3);
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #00ff88;
+            font-size: 14px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            z-index: 10;
+        }
+
+        .ui-panel {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 14px;
+            border-radius: 4px;
+            border: 2px solid #00ff88;
+            margin-bottom: 10px;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00ff88;
+            font-size: 12px;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 4px;
+            border: 2px solid #00ff88;
+        }
+
+        #chartOverlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 350px;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #00ff88;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+
+        .pulse {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui">
+            <div class="ui-panel">
+                <div>👥 Players Online: <span id="count">1</span></div>
+            </div>
+            <div class="ui-panel">
+                <div>📊 Chart: <span class="pulse">LIVE</span></div>
+                <div>🎮 Score: <span id="score">0</span></div>
+            </div>
+        </div>
+        <div id="instructions">
+            ← → or A D to Move | SPACE or ↑ or W to Jump | Terrain follows live crypto chart!
+        </div>
+        <div id="chartOverlay">
+            <iframe 
+                id="birdeyeChart"
+                width="100%" 
+                height="100%" 
+                src="https://birdeye.so/tv-widget/J6pQQ3FAcJQeWPPGppWRb4nM8jU3wLyYbRrLh7feMfvd?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=Europe%2FLondon&chartLeftToolbar=hide&theme=dark" 
+                frameborder="0" 
+                allowfullscreen>
+            </iframe>
+        </div>
+    </div>
+
+    <script type="module">
+        // Firebase configuration
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getDatabase, ref, set, onValue, update, remove, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBcVNexKQm64Uyrrk1hBVPNb3WnCt3fd9E",
+            authDomain: "breloom-520aa.firebaseapp.com",
+            databaseURL: "https://breloom-520aa-default-rtdb.firebaseio.com",
+            projectId: "breloom-520aa",
+            storageBucket: "breloom-520aa.firebasestorage.app",
+            messagingSenderId: "19503362635",
+            appId: "1:19503362635:web:697a5aa57ee0074f2813ce",
+            measurementId: "G-4QR1YWRBSM"
+        };
+
+        let app, database;
+        try {
+            app = initializeApp(firebaseConfig);
+            database = getDatabase(app);
+            console.log("✅ Firebase connected!");
+        } catch (error) {
+            console.error("❌ Firebase error:", error);
+        }
+
+        // Game setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 1400;
+        canvas.height = 700;
+
+        // Player ID
+        const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+        
+        // Game state
+        const players = new Map();
+        let score = 0;
+        let localPlayer = {
+            x: 100,
+            y: 300,
+            vx: 0,
+            vy: 0,
+            width: 24,
+            height: 32,
+            grounded: false,
+            color: `hsl(${Math.random() * 360}, 85%, 65%)`,
+            trail: []
+        };
+
+        // Chart data for terrain
+        let chartPoints = [];
+        let terrainOffset = 0;
+        const TERRAIN_SCALE = 4;
+        const TERRAIN_SMOOTHNESS = 0.7;
+
+        // Generate initial realistic chart data
+        function generateChartData() {
+            const points = [];
+            let price = 120;
+            let trend = 0;
+            
+            for (let i = 0; i < 500; i++) {
+                // Create more natural price movements
+                trend += (Math.random() - 0.5) * 0.3;
+                trend *= 0.95; // Decay
+                price += trend + (Math.random() - 0.5) * 5;
+                price = Math.max(40, Math.min(200, price));
+                points.push(price);
+            }
+            return points;
+        }
+
+        chartPoints = generateChartData();
+
+        // Simulate live chart updates (more realistic volatility)
+        setInterval(() => {
+            const lastPrice = chartPoints[chartPoints.length - 1];
+            const volatility = Math.random() * 6 - 3;
+            const momentum = (chartPoints[chartPoints.length - 1] - chartPoints[chartPoints.length - 5]) * 0.1;
+            let newPrice = lastPrice + volatility + momentum;
+            newPrice = Math.max(40, Math.min(200, newPrice));
+            
+            chartPoints.push(newPrice);
+            if (chartPoints.length > 500) {
+                chartPoints.shift();
+            }
+        }, 1500);
+
+        // Controls
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (e.key === ' ' || e.key === 'ArrowUp') e.preventDefault();
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Physics constants
+        const GRAVITY = 0.7;
+        const JUMP_FORCE = -14;
+        const MOVE_SPEED = 6;
+        const FRICTION = 0.85;
+        const MAX_FALL_SPEED = 15;
+
+        // Smooth terrain height with interpolation
+        function getTerrainHeight(x) {
+            const pos = (x + terrainOffset) / TERRAIN_SCALE;
+            const index = Math.floor(pos);
+            const fraction = pos - index;
+            
+            if (index >= 0 && index < chartPoints.length - 1) {
+                const h1 = canvas.height - chartPoints[index] * 2.5;
+                const h2 = canvas.height - chartPoints[index + 1] * 2.5;
+                // Linear interpolation for smooth terrain
+                return h1 + (h2 - h1) * fraction;
+            }
+            return canvas.height - 200;
+        }
+
+        // Update player physics
+        function updatePlayer() {
+            // Horizontal movement
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+                localPlayer.vx = -MOVE_SPEED;
+            } else if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+                localPlayer.vx = MOVE_SPEED;
+            } else {
+                localPlayer.vx *= FRICTION;
+            }
+
+            // Apply gravity
+            localPlayer.vy += GRAVITY;
+            localPlayer.vy = Math.min(localPlayer.vy, MAX_FALL_SPEED);
+
+            // Update position
+            localPlayer.x += localPlayer.vx;
+            localPlayer.y += localPlayer.vy;
+
+            // Terrain collision with smoothing
+            const terrainY = getTerrainHeight(localPlayer.x + localPlayer.width / 2);
+            if (localPlayer.y + localPlayer.height >= terrainY) {
+                localPlayer.y = terrainY - localPlayer.height;
+                localPlayer.vy = 0;
+                localPlayer.grounded = true;
+            } else {
+                localPlayer.grounded = false;
+            }
+
+            // Jump
+            if ((keys[' '] || keys['ArrowUp'] || keys['w'] || keys['W']) && localPlayer.grounded) {
+                localPlayer.vy = JUMP_FORCE;
+                localPlayer.grounded = false;
+            }
+
+            // Keep player in bounds horizontally
+            localPlayer.x = Math.max(20, Math.min(canvas.width - localPlayer.width - 20, localPlayer.x));
+
+            // Scroll terrain with player movement
+            if (localPlayer.x > canvas.width * 0.65) {
+                const scrollSpeed = 2.5;
+                terrainOffset += scrollSpeed;
+                localPlayer.x -= scrollSpeed;
+                score += Math.floor(scrollSpeed);
+                document.getElementById('score').textContent = score;
+            }
+
+            // Trail effect
+            localPlayer.trail.push({x: localPlayer.x + localPlayer.width/2, y: localPlayer.y + localPlayer.height/2, alpha: 1});
+            if (localPlayer.trail.length > 8) localPlayer.trail.shift();
+            localPlayer.trail.forEach(t => t.alpha *= 0.85);
+
+            // Sync with Firebase (throttled)
+            if (database && Math.random() < 0.3) {
+                update(ref(database, 'players/' + playerId), {
+                    x: Math.round(localPlayer.x),
+                    y: Math.round(localPlayer.y),
+                    color: localPlayer.color,
+                    score: score,
+                    timestamp: Date.now()
+                });
+            }
+        }
+
+        // Draw terrain with gradient
+        function drawTerrain() {
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, 'rgba(0, 255, 136, 0.4)');
+            gradient.addColorStop(1, 'rgba(0, 255, 136, 0.1)');
+            
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height);
+            
+            for (let x = 0; x < canvas.width; x += 2) {
+                const y = getTerrainHeight(x);
+                ctx.lineTo(x, y);
+            }
+            
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.closePath();
+            
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Outline
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, getTerrainHeight(0));
+            for (let x = 0; x < canvas.width; x += 2) {
+                ctx.lineTo(x, getTerrainHeight(x));
+            }
+            ctx.stroke();
+
+            // Grid overlay
+            ctx.strokeStyle = 'rgba(0, 255, 136, 0.08)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 60) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 60) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        // Draw player with retro style
+        function drawPlayer(player, isLocal = false) {
+            // Trail
+            if (isLocal) {
+                player.trail.forEach((t, i) => {
+                    ctx.fillStyle = player.color.replace(')', `, ${t.alpha * 0.4})`).replace('hsl', 'hsla');
+                    ctx.fillRect(t.x - 2, t.y - 2, 4, 4);
+                });
+            }
+
+            // Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(player.x - 2, player.y + player.height + 2, player.width + 4, 4);
+
+            // Body
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            
+            // Border
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(player.x, player.y, player.width, player.height);
+            
+            // Eyes
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(player.x + 5, player.y + 10, 5, 5);
+            ctx.fillRect(player.x + 14, player.y + 10, 5, 5);
+            
+            // Pupils
+            ctx.fillStyle = '#000';
+            const lookDir = player.vx > 0 ? 1 : player.vx < 0 ? -1 : 0;
+            ctx.fillRect(player.x + 6 + lookDir, player.y + 11, 3, 3);
+            ctx.fillRect(player.x + 15 + lookDir, player.y + 11, 3, 3);
+
+            // Mouth
+            if (!player.grounded) {
+                ctx.fillStyle = '#000';
+                ctx.fillRect(player.x + 8, player.y + 22, 8, 2);
+            }
+
+            // Name tag
+            if (isLocal) {
+                ctx.fillStyle = '#00ff88';
+                ctx.font = 'bold 11px Courier New';
+                ctx.fillText('YOU', player.x + 2, player.y - 6);
+            }
+        }
+
+        // Particle effects
+        const particles = [];
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 5; i++) {
+                particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 1,
+                    color
+                });
+            }
+        }
+
+        function updateParticles() {
+            particles.forEach((p, i) => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.2;
+                p.life -= 0.02;
+                
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, 3, 3);
+                
+                if (p.life <= 0) particles.splice(i, 1);
+            });
+            ctx.globalAlpha = 1;
+        }
+
+        // Game loop
+        let lastJump = false;
+        function gameLoop() {
+            ctx.fillStyle = '#0f1429';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Animated star field
+            for (let i = 0; i < 100; i++) {
+                const x = (i * 47 + terrainOffset * 0.2) % canvas.width;
+                const y = (i * 73) % canvas.height;
+                const size = (i % 3) + 1;
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + (i % 5) * 0.15})`;
+                ctx.fillRect(x, y, size, size);
+            }
+
+            drawTerrain();
+            updatePlayer();
+            
+            // Jump particles
+            if (localPlayer.grounded && !lastJump && localPlayer.vy < 0) {
+                createParticles(localPlayer.x + localPlayer.width/2, localPlayer.y + localPlayer.height, localPlayer.color);
+            }
+            lastJump = !localPlayer.grounded;
+            
+            updateParticles();
+            drawPlayer(localPlayer, true);
+
+            // Draw other players
+            players.forEach((player, id) => {
+                if (id !== playerId) {
+                    drawPlayer(player);
+                }
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Firebase listeners
+        if (database) {
+            const playersRef = ref(database, 'players');
+            const playerRef = ref(database, 'players/' + playerId);
+            
+            // Auto-cleanup on disconnect
+            onDisconnect(playerRef).remove();
+            
+            onValue(playersRef, (snapshot) => {
+                const data = snapshot.val();
+                players.clear();
+                let count = 0;
+                
+                if (data) {
+                    Object.keys(data).forEach(id => {
+                        const player = data[id];
+                        // Remove stale players (older than 10 seconds)
+                        if (Date.now() - player.timestamp < 10000) {
+                            players.set(id, player);
+                            count++;
+                        } else {
+                            // Clean up stale players
+                            remove(ref(database, 'players/' + id));
+                        }
+                    });
+                }
+                
+                document.getElementById('count').textContent = count;
+            });
+
+            // Cleanup on exit
+            window.addEventListener('beforeunload', () => {
+                remove(playerRef);
+            });
+        }
+
+        // Start game
+        console.log("🎮 Game started!");
+        console.log("Player ID:", playerId);
+        gameLoop();
+    </script>
+</body>
+</html>
