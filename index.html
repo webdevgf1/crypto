@@ -14,7 +14,7 @@
         }
 
         body {
-            background: #000;
+            background: #0d0d1a;
             font-family: 'Press Start 2P', monospace;
             overflow: hidden;
             display: flex;
@@ -31,7 +31,7 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            background: #000;
+            background: #0d0d1a;
         }
 
         #title {
@@ -60,26 +60,10 @@
             width: 100%;
             max-width: 1920px;
             height: 800px;
-            background: #000;
+            background: #131722;
             border: 8px solid #000;
-            box-shadow: 0 0 0 4px #fff;
+            box-shadow: 0 0 0 4px #2a2e39;
             overflow: hidden;
-        }
-
-        #chartContainer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            opacity: 0.3;
-            z-index: 1;
-        }
-
-        #birdeyeChart {
-            width: 100%;
-            height: 100%;
-            border: none;
         }
 
         #gameCanvas {
@@ -91,32 +75,56 @@
             z-index: 2;
         }
 
+        #minimap {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 250px;
+            height: 150px;
+            background: rgba(19, 23, 34, 0.95);
+            border: 3px solid #2a2e39;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 10;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        #minimap.expanded {
+            width: 500px;
+            height: 300px;
+        }
+
+        #minimapCanvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        #minimapLabel {
+            position: absolute;
+            top: 5px;
+            left: 8px;
+            font-size: 8px;
+            color: #fff;
+            pointer-events: none;
+        }
+
         #instructions {
             position: absolute;
             bottom: 16px;
             left: 16px;
-            background: #000;
+            background: rgba(0, 0, 0, 0.9);
             padding: 12px 16px;
-            border: 4px solid #fff;
+            border: 4px solid #2a2e39;
             font-size: 10px;
             color: #fff;
             box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.5);
             z-index: 3;
+            border-radius: 4px;
         }
 
         .key {
             color: #ffeb3b;
-        }
-
-        #debug {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: #0f0;
-            font-size: 10px;
-            z-index: 10;
-            background: rgba(0,0,0,0.8);
-            padding: 10px;
         }
     </style>
 </head>
@@ -125,23 +133,19 @@
         <div id="title">CRYPTO RUNNER</div>
         <div id="stats">
             <div class="stat-line">PLAYERS <span class="stat-value" id="count">1</span></div>
-            <div class="stat-line">SCORE <span class="stat-value" id="score">0</span></div>
+            <div class="stat-line">DISTANCE <span class="stat-value" id="score">0</span>m</div>
         </div>
     </div>
 
     <div id="gameContainer">
-        <div id="chartContainer">
-            <iframe 
-                id="birdeyeChart"
-                src="https://birdeye.so/tv-widget/J6pQQ3FAcJQeWPPGppWRb4nM8jU3wLyYbRrLh7feMfvd?chain=solana&viewMode=pair&chartInterval=1&chartType=Candle&chartTimezone=Europe%2FLondon&chartLeftToolbar=hide&theme=dark" 
-                allowfullscreen>
-            </iframe>
-        </div>
         <canvas id="gameCanvas"></canvas>
+        <div id="minimap">
+            <canvas id="minimapCanvas"></canvas>
+            <div id="minimapLabel">MAP - CLICK TO EXPAND</div>
+        </div>
         <div id="instructions">
             <span class="key">ARROW KEYS</span> MOVE | <span class="key">SPACE</span> JUMP
         </div>
-        <div id="debug">Scanning for candles...</div>
     </div>
 
     <script type="module">
@@ -172,13 +176,37 @@
         canvas.width = 1920;
         canvas.height = 800;
 
+        const minimapCanvas = document.getElementById('minimapCanvas');
+        const minimapCtx = minimapCanvas.getContext('2d');
+        minimapCanvas.width = 250;
+        minimapCanvas.height = 150;
+
+        const minimapEl = document.getElementById('minimap');
+        let minimapExpanded = false;
+        
+        minimapEl.addEventListener('click', () => {
+            minimapExpanded = !minimapExpanded;
+            minimapEl.classList.toggle('expanded');
+            if (minimapExpanded) {
+                minimapCanvas.width = 500;
+                minimapCanvas.height = 300;
+            } else {
+                minimapCanvas.width = 250;
+                minimapCanvas.height = 150;
+            }
+        });
+
         const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
         const players = new Map();
         let score = 0;
 
-        // Store detected candle platforms
+        // Store platforms
         let platforms = [];
         let cameraX = 0;
+
+        const CANDLE_WIDTH = 14;
+        const CANDLE_GAP = 8;
+        const CANDLE_SPACING = CANDLE_WIDTH + CANDLE_GAP;
 
         // Player
         let localPlayer = {
@@ -193,62 +221,63 @@
             facing: 1
         };
 
-        // Scan the chart for green/red pixels
-        function scanChartForCandles() {
-            // Since we can't access iframe pixels directly due to CORS,
-            // we'll simulate the candle positions that match chart movement
+        // Generate initial platforms with realistic price action
+        function generateInitialPlatforms() {
             platforms = [];
+            let price = 400;
+            let trend = 0;
             
-            // Generate platforms that look like real chart candles
-            let yPos = 400;
             for (let i = 0; i < 300; i++) {
-                const x = i * 20;
+                const x = i * CANDLE_SPACING;
                 
-                // Simulate price movement
-                yPos += (Math.random() - 0.5) * 60;
-                yPos = Math.max(100, Math.min(700, yPos));
+                // More realistic price movement
+                trend += (Math.random() - 0.5) * 0.5;
+                trend *= 0.95;
                 
+                const volatility = 30 + Math.random() * 40;
+                price += trend * 10 + (Math.random() - 0.5) * volatility;
+                price = Math.max(150, Math.min(650, price));
+                
+                const candleHeight = 20 + Math.random() * 50;
                 const isGreen = Math.random() > 0.5;
-                const height = 20 + Math.random() * 40;
                 
                 platforms.push({
                     x: x,
-                    y: yPos - height,
-                    width: 16,
-                    height: height,
-                    color: isGreen ? '#089981' : '#f23645'
+                    y: price - candleHeight / 2,
+                    width: CANDLE_WIDTH,
+                    height: candleHeight,
+                    color: isGreen ? '#089981' : '#f23645',
+                    isGreen: isGreen
                 });
             }
-            
-            document.getElementById('debug').textContent = `Found ${platforms.length} candles`;
         }
 
-        // Initial scan
-        scanChartForCandles();
+        generateInitialPlatforms();
 
-        // Rescan every 1 second to catch new candles
+        // Add new candles that follow the trend
         setInterval(() => {
             const lastPlatform = platforms[platforms.length - 1];
-            const newX = lastPlatform.x + 20;
-            let yPos = lastPlatform.y;
+            const secondLast = platforms[platforms.length - 2];
             
-            // Add new candle
-            yPos += (Math.random() - 0.5) * 60;
-            yPos = Math.max(100, Math.min(700, yPos));
+            // Follow the trend from previous candles
+            const trend = lastPlatform.y - secondLast.y;
+            const newX = lastPlatform.x + CANDLE_SPACING;
             
-            const isGreen = Math.random() > 0.5;
-            const height = 20 + Math.random() * 40;
+            let newY = lastPlatform.y + trend * 0.7 + (Math.random() - 0.5) * 40;
+            newY = Math.max(150, Math.min(650, newY));
+            
+            const candleHeight = 20 + Math.random() * 50;
+            const isGreen = newY < lastPlatform.y;
             
             platforms.push({
                 x: newX,
-                y: yPos - height,
-                width: 16,
-                height: height,
-                color: isGreen ? '#089981' : '#f23645'
+                y: newY,
+                width: CANDLE_WIDTH,
+                height: candleHeight,
+                color: isGreen ? '#089981' : '#f23645',
+                isGreen: isGreen
             });
-            
-            document.getElementById('debug').textContent = `Found ${platforms.length} candles`;
-        }, 1000);
+        }, 1500);
 
         // Controls
         const keys = {};
@@ -327,17 +356,44 @@
             }
         }
 
+        function drawGrid() {
+            // Vertical grid lines
+            ctx.strokeStyle = 'rgba(42, 46, 57, 0.5)';
+            ctx.lineWidth = 1;
+            
+            const startX = Math.floor(cameraX / 100) * 100;
+            for (let x = startX; x < cameraX + canvas.width; x += 100) {
+                const screenX = x - cameraX;
+                ctx.beginPath();
+                ctx.moveTo(screenX, 0);
+                ctx.lineTo(screenX, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Horizontal grid lines
+            for (let y = 0; y < canvas.height; y += 100) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
         function drawPlatforms() {
             platforms.forEach(platform => {
                 const screenX = platform.x - cameraX;
                 
                 if (screenX > -50 && screenX < canvas.width + 50) {
-                    // Draw candle body
+                    // Candle wick (thin line)
+                    ctx.fillStyle = platform.color;
+                    ctx.fillRect(screenX + platform.width / 2 - 1, platform.y - 10, 2, platform.height + 20);
+                    
+                    // Candle body
                     ctx.fillStyle = platform.color;
                     ctx.fillRect(screenX, platform.y, platform.width, platform.height);
                     
-                    // Pixel border
-                    ctx.strokeStyle = '#000';
+                    // Border for depth
+                    ctx.strokeStyle = platform.isGreen ? '#0a7a6a' : '#d13838';
                     ctx.lineWidth = 2;
                     ctx.strokeRect(screenX, platform.y, platform.width, platform.height);
                 }
@@ -385,14 +441,46 @@
             }
         }
 
-        function gameLoop() {
-            // Sky background
-            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            gradient.addColorStop(0, '#1a1a2e');
-            gradient.addColorStop(1, '#0d0d1a');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        function drawMinimap() {
+            minimapCtx.fillStyle = '#131722';
+            minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+            
+            const scale = minimapExpanded ? 0.1 : 0.05;
+            const offsetX = minimapExpanded ? 250 : 125;
+            
+            // Draw candles on minimap
+            platforms.forEach(platform => {
+                const mx = (platform.x - cameraX + offsetX) * scale;
+                const my = platform.y * scale;
+                
+                if (mx > 0 && mx < minimapCanvas.width) {
+                    minimapCtx.fillStyle = platform.color;
+                    minimapCtx.fillRect(mx, my * 0.3, 2, 3);
+                }
+            });
+            
+            // Draw player position
+            const playerMapX = (localPlayer.x - cameraX + offsetX) * scale;
+            const playerMapY = localPlayer.y * scale * 0.3;
+            
+            // Yellow dot for player
+            minimapCtx.fillStyle = '#ffeb3b';
+            minimapCtx.beginPath();
+            minimapCtx.arc(playerMapX, playerMapY, 4, 0, Math.PI * 2);
+            minimapCtx.fill();
+            
+            // Red border
+            minimapCtx.strokeStyle = '#ff0000';
+            minimapCtx.lineWidth = 2;
+            minimapCtx.stroke();
+        }
 
+        function gameLoop() {
+            // Background
+            ctx.fillStyle = '#131722';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            drawGrid();
             drawPlatforms();
             updatePlayer();
             drawPlayer(localPlayer, true);
@@ -402,6 +490,8 @@
                     drawPlayer(player);
                 }
             });
+
+            drawMinimap();
 
             requestAnimationFrame(gameLoop);
         }
