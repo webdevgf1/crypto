@@ -209,8 +209,8 @@
         const players = new Map();
         let score = 0;
         let localPlayer = {
-            x: 200,
-            y: 400,
+            x: 50,
+            y: 200,
             vx: 0,
             vy: 0,
             width: 16,
@@ -245,13 +245,13 @@
         }
 
         let candles = [];
-        let candleOffset = 0;
+        let worldScrollX = 0;
         const CANDLE_SPACING = 12;
         const CANDLE_WIDTH = 24;
         const PRICE_SCALE = 3.5;
         const BASE_HEIGHT = 550;
 
-        function generateCandle(prevClose) {
+        function generateCandle(prevClose, index) {
             const volatility = 18;
             const open = prevClose;
             const change = (Math.random() - 0.48) * volatility;
@@ -260,31 +260,24 @@
             const high = Math.max(open, close) + Math.random() * volatility * 0.6;
             const low = Math.min(open, close) - Math.random() * volatility * 0.6;
             
-            return new Candle(open, high, low, close, candles.length * (CANDLE_WIDTH + CANDLE_SPACING));
+            return new Candle(open, high, low, close, index * (CANDLE_WIDTH + CANDLE_SPACING));
         }
 
         let lastPrice = 100;
-        for (let i = 0; i < 70; i++) {
-            const candle = generateCandle(lastPrice);
+        // Generate starting platform
+        for (let i = 0; i < 100; i++) {
+            const candle = generateCandle(lastPrice, i);
             candles.push(candle);
             lastPrice = candle.close;
         }
 
         setInterval(() => {
-            const candle = generateCandle(lastPrice);
-            candle.x = candles[candles.length - 1].x + CANDLE_WIDTH + CANDLE_SPACING;
+            const candle = generateCandle(lastPrice, candles.length);
             candles.push(candle);
             lastPrice = candle.close;
             
             const priceChange = ((candle.close - candle.open) / candle.open * 100).toFixed(1);
             document.getElementById('priceChange').textContent = (priceChange >= 0 ? '+' : '') + priceChange + '%';
-            
-            if (candles.length > 80) {
-                candles.shift();
-                candles.forEach((c, i) => {
-                    c.x = i * (CANDLE_WIDTH + CANDLE_SPACING);
-                });
-            }
         }, 3000);
 
         const keys = {};
@@ -316,16 +309,20 @@
             localPlayer.x += localPlayer.vx;
             localPlayer.y += localPlayer.vy;
 
+            // Camera follows player
+            const targetScrollX = localPlayer.x - canvas.width * 0.3;
+            worldScrollX += (targetScrollX - worldScrollX) * 0.1;
+            worldScrollX = Math.max(0, worldScrollX);
+
             localPlayer.grounded = false;
-            const playerCenterX = localPlayer.x + localPlayer.width / 2 - candleOffset;
             
             // Check collision with candles
             candles.forEach(candle => {
-                const candleScreenX = candle.x - candleOffset;
+                const candleScreenX = candle.x - worldScrollX;
                 
                 // Player must be within candle's horizontal bounds
-                if (localPlayer.x + localPlayer.width > candleScreenX && 
-                    localPlayer.x < candleScreenX + CANDLE_WIDTH) {
+                if (localPlayer.x - worldScrollX + localPlayer.width > candleScreenX && 
+                    localPlayer.x - worldScrollX < candleScreenX + CANDLE_WIDTH) {
                     
                     const bodyTopY = BASE_HEIGHT - candle.bodyTop * PRICE_SCALE;
                     
@@ -346,21 +343,17 @@
                 localPlayer.grounded = false;
             }
 
-            // Keep player in horizontal bounds
-            localPlayer.x = Math.max(10, Math.min(canvas.width - localPlayer.width - 10, localPlayer.x));
-
-            // Auto-scroll the world to the right
-            const scrollSpeed = 2;
-            candleOffset += scrollSpeed;
-            score += Math.floor(scrollSpeed * 10);
+            // Update score based on distance
+            score = Math.floor(localPlayer.x / 10);
             document.getElementById('score').textContent = score;
 
             // Game over if player falls off screen
             if (localPlayer.y > canvas.height) {
-                localPlayer.x = 200;
-                localPlayer.y = 300;
+                localPlayer.x = 50;
+                localPlayer.y = 200;
                 localPlayer.vy = 0;
-                score = Math.max(0, score - 500);
+                worldScrollX = 0;
+                score = 0;
                 document.getElementById('score').textContent = score;
             }
 
@@ -388,7 +381,7 @@
 
         function drawCandles() {
             candles.forEach(candle => {
-                const screenX = candle.x - candleOffset;
+                const screenX = candle.x - worldScrollX;
                 
                 if (screenX > -50 && screenX < canvas.width + 50) {
                     const highY = BASE_HEIGHT - candle.high * PRICE_SCALE;
